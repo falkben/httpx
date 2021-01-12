@@ -1,8 +1,11 @@
+import asyncio
 import json
 
 import pytest
 
 import httpx
+
+SLEEP_TIME = 0.1
 
 
 async def hello_world(scope, receive, send):
@@ -12,6 +15,11 @@ async def hello_world(scope, receive, send):
 
     await send({"type": "http.response.start", "status": status, "headers": headers})
     await send({"type": "http.response.body", "body": output})
+
+
+async def slow_hello_world(scope, receive, send):
+    await asyncio.sleep(SLEEP_TIME)
+    await hello_world(scope, receive, send)
 
 
 async def echo_path(scope, receive, send):
@@ -73,6 +81,23 @@ async def raise_exc_after_response(scope, receive, send):
 @pytest.mark.usefixtures("async_environment")
 async def test_asgi():
     async with httpx.AsyncClient(app=hello_world) as client:
+        response = await client.get("http://www.example.org/")
+
+    assert response.status_code == 200
+    assert response.text == "Hello, World!"
+
+
+@pytest.mark.usefixtures("async_environment")
+async def test_asgi_timeout():
+    async with httpx.AsyncClient(
+        app=slow_hello_world, timeout=SLEEP_TIME / 10
+    ) as client:
+        with pytest.raises(asyncio.TimeoutError):
+            await client.get("http://www.example.org/")
+
+    async with httpx.AsyncClient(
+        app=slow_hello_world, timeout=SLEEP_TIME + 5
+    ) as client:
         response = await client.get("http://www.example.org/")
 
     assert response.status_code == 200

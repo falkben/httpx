@@ -1,3 +1,4 @@
+import asyncio
 from typing import TYPE_CHECKING, Callable, List, Optional, Tuple, Union
 from urllib.parse import unquote
 
@@ -76,6 +77,10 @@ class ASGITransport(httpcore.AsyncHTTPTransport):
         stream: httpcore.AsyncByteStream = None,
         ext: dict = None,
     ) -> Tuple[int, List[Tuple[bytes, bytes]], httpcore.AsyncByteStream, dict]:
+
+        ext = {} if ext is None else ext
+        timeout = ext.get("timeout", {})
+
         headers = [] if headers is None else headers
         stream = httpcore.PlainByteStream(content=b"") if stream is None else stream
 
@@ -90,7 +95,6 @@ class ASGITransport(httpcore.AsyncHTTPTransport):
             "headers": [(k.lower(), v) for (k, v) in headers],
             "scheme": scheme.decode("ascii"),
             "path": unquote(path.decode("ascii")),
-            "raw_path": path,
             "query_string": query,
             "server": (host.decode("ascii"), port),
             "client": self.client,
@@ -146,7 +150,8 @@ class ASGITransport(httpcore.AsyncHTTPTransport):
                     response_complete.set()
 
         try:
-            await self.app(scope, receive, send)
+            # trio support?
+            await asyncio.wait_for(self.app(scope, receive, send), timeout.get("connect"))
         except Exception:
             if self.raise_app_exceptions or not response_complete.is_set():
                 raise
