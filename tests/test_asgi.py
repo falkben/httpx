@@ -2,6 +2,8 @@ import asyncio
 import json
 
 import pytest
+import trio
+import sniffio
 
 import httpx
 
@@ -18,7 +20,10 @@ async def hello_world(scope, receive, send):
 
 
 async def slow_hello_world(scope, receive, send):
-    await asyncio.sleep(SLEEP_TIME)
+    if sniffio.current_async_library() == "trio":
+        await trio.sleep(SLEEP_TIME)
+    else:
+        await asyncio.sleep(SLEEP_TIME)
     await hello_world(scope, receive, send)
 
 
@@ -92,7 +97,7 @@ async def test_asgi_timeout():
     async with httpx.AsyncClient(
         app=slow_hello_world, timeout=SLEEP_TIME / 10
     ) as client:
-        with pytest.raises(asyncio.TimeoutError):
+        with pytest.raises((asyncio.TimeoutError, trio.TooSlowError)):
             await client.get("http://www.example.org/")
 
     async with httpx.AsyncClient(
@@ -102,6 +107,10 @@ async def test_asgi_timeout():
 
     assert response.status_code == 200
     assert response.text == "Hello, World!"
+
+    async with httpx.AsyncClient(app=slow_hello_world) as client:
+        with pytest.raises((asyncio.TimeoutError, trio.TooSlowError)):
+            await client.get("http://www.example.org/", timeout=SLEEP_TIME / 10)
 
 
 @pytest.mark.usefixtures("async_environment")

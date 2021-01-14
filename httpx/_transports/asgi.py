@@ -1,4 +1,3 @@
-import asyncio
 from typing import TYPE_CHECKING, Callable, List, Optional, Tuple, Union
 from urllib.parse import unquote
 
@@ -150,8 +149,17 @@ class ASGITransport(httpcore.AsyncHTTPTransport):
                     response_complete.set()
 
         try:
-            # trio support?
-            await asyncio.wait_for(self.app(scope, receive, send), timeout.get("connect"))
+            if sniffio.current_async_library() == "trio":
+                import trio
+
+                with trio.fail_after(timeout.get("connect")):
+                    await self.app(scope, receive, send)
+            else:
+                import asyncio
+
+                await asyncio.wait_for(
+                    self.app(scope, receive, send), timeout.get("connect")
+                )
         except Exception:
             if self.raise_app_exceptions or not response_complete.is_set():
                 raise
